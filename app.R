@@ -6,12 +6,30 @@ library(tidyverse)
 library(shinybusy)
 
 ui <- page_sidebar(
+  tags$head(
+    tags$style(HTML("
+      .info-btn {
+        background-color: #0099E5;
+        color: white;
+        border: none;
+        position: absolute;
+        top: -10px;
+        right: 0;
+      }
+      .info-btn:hover {
+        background-color: #0077cc;
+      }
+    "))
+  ),
   title = "Monotonicity Testing Demo",
 
   sidebar = sidebar(
-    fileInput("file", "Upload CSV",
-              buttonLabel = "Browse...",
-              accept = c(".csv")),
+    div(style = "position: relative;",
+        actionButton("info_btn", icon("info-circle"), class = "info-btn"),
+        fileInput("file", "Upload CSV",
+                  buttonLabel = "Browse...",
+                  accept = c(".csv"))
+    ),
     selectInput("x_col", "Select X Column", choices = NULL),
     selectInput("y_col", "Select Y Column", choices = NULL),
     sliderInput("m", "Window Size (m):",
@@ -85,11 +103,32 @@ ui <- page_sidebar(
 
 server <- function(input, output, session) {
 
+  # modal for when info button is pressed
+  observeEvent(input$info_btn, {
+    showModal(modalDialog(
+      title = "Data Cleaning Information",
+      HTML("<ul>
+             <li>All NA values are automatically removed.</li>
+             <li>If your data contains more than 2000 rows, a random 2000 with be selected.</li>
+             <li>At least 2 columns are required.</li>
+             <li>All non-numeric columns will be dropped.</li>
+           </ul>"),
+      easyClose = TRUE,
+      footer = modalButton("Close")
+    ))
+  })
+
   # read data and drop na
   data <- reactive({
     req(input$file)
     df <- read.csv(input$file$datapath) %>%
-      drop_na()
+      drop_na() %>%
+      select(where(is.numeric)) # select only numeric columns
+
+    if (nrow(df) > 2000) {
+      df <- df %>% sample_n(2000)
+    }
+
     req(ncol(df) >= 2)
     return(df)
   })
