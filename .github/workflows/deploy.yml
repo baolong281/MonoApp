@@ -1,27 +1,21 @@
-name: Deploy to shinyapps.io
-on:
-  # run on any push
-  push:
+on: [push]
 
-  # run on request (via button in actions menu)
-  workflow_dispatch:
+name: deploy-shiny
 
 jobs:
-  deploy:
-    name: Deploy to shinyapps
-
-    # allow skipping deployment for commits containing '[automated]' or '[no-deploy]' in the commit message
-    if: "!contains(github.event.head_commit.message, '[automated]') && !contains(github.event.head_commit.message, '[no-deploy]')"
-    runs-on: ubuntu-latest
+  deploy-shiny:
+    runs-on: macOS-latest
+    env:
+      GITHUB_PAT: ${{secrets.DEPLOY_SECRET}}
     steps:
       - uses: actions/checkout@v2
-      - name: deploy
-        uses: BDSI-Utwente/shinyapps-deploy-github-action@v1
-        with:
-          # account and application name (https://<accountName>.shinyapps.io/<appName>)
-          appName: MonoApp
-          accountName: baolong
-
-          # token and secret obtained from https://www.shinyapps.io/admin/#/tokens
-          accountToken: ${{ secrets.SHINYAPPS_TOKEN }}
-          accountSecret: ${{ secrets.SHINYAPPS_SECRET }}
+      - uses: r-lib/actions/setup-r@v2
+      - name: Install dependency
+        run: |
+          install.packages(c("shiny", "rsconnect", "tidyverse", "shinybusy", "bslib", "DT", "MonotonicityTest", "shinyjs"), type = "binary")
+        shell: Rscript {0}
+      - name: shinyapps deploy
+        run: |
+          rsconnect::setAccountInfo(name='baolong', token='${{secrets.SHINYAPPS_TOKEN}}', secret='${{secrets.SHINYAPPS_SECRET}}')
+          rsconnect::deployApp(appName = 'MonoApp', account = 'baolong', server = 'shinyapps.io', forceUpdate = TRUE)
+        shell: Rscript {0}
