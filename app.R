@@ -4,8 +4,10 @@ library(DT)
 library(MonotonicityTest)
 library(tidyverse)
 library(shinybusy)
+library(shinyjs)
 
 ui <- page_sidebar(
+  useShinyjs(),
   tags$head(
     tags$style(HTML("
       .info-btn {
@@ -19,6 +21,10 @@ ui <- page_sidebar(
       .info-btn:hover {
         background-color: #0077cc;
       }
+      .disabled-input {
+        opacity: 0.5;  /* Grey out the inputs */
+        pointer-events: none;  /* Disable interaction */
+      }
     "))
   ),
   title = "Monotonicity Testing Demo",
@@ -30,16 +36,18 @@ ui <- page_sidebar(
                   buttonLabel = "Browse...",
                   accept = c(".csv"))
     ),
-    selectInput("x_col", "Select X Column", choices = NULL),
-    selectInput("y_col", "Select Y Column", choices = NULL),
-    sliderInput("m", "Window Size (m):",
-                min = 1, max = 100, value = 25, step = 1),
-    sliderInput("bandwidth", "Bandwidth:",
-                min = 0.01, max = 10, value = 1, step = 0.01),
-    numericInput("boot_num", "Number of Bootstraps:",
-                 value = 100, min = 1, max = 1000),
-    checkboxInput("negative", "Test for Decreasing Monotonicity", value = FALSE),
-    actionButton("run_test", "Run Monotonicity Test", class = "btn-primary"),
+    div(id = "inputs-container", class="disabled-input",
+        selectInput("x_col", "Select X Column", choices = NULL),
+        selectInput("y_col", "Select Y Column", choices = NULL),
+        sliderInput("m", "Window Size (m):",
+                    min = 1, max = 100, value = 25, step = 1),
+        sliderInput("bandwidth", "Bandwidth:",
+                    min = 0.01, max = 10, value = 1, step = 0.01),
+        sliderInput("boot_num", "Number of Bootstraps:",
+                    min = 1, max = 100, value = 25, step = 1),
+        checkboxInput("negative", "Test for Decreasing Monotonicity", value = FALSE),
+        actionButton("run_test", "Run Monotonicity Test", class = "btn-primary")
+    )
   ),
   # loading spinner in test window
   # add_busy_spinner(
@@ -103,21 +111,6 @@ ui <- page_sidebar(
 
 server <- function(input, output, session) {
 
-  # modal for when info button is pressed
-  observeEvent(input$info_btn, {
-    showModal(modalDialog(
-      title = "Data Cleaning Information",
-      HTML("<ul>
-             <li>All NA values are automatically removed.</li>
-             <li>If your data contains more than 2000 rows, a random 2000 with be selected.</li>
-             <li>At least 2 columns are required.</li>
-             <li>All non-numeric columns will be dropped.</li>
-           </ul>"),
-      easyClose = TRUE,
-      footer = modalButton("Close")
-    ))
-  })
-
   # read data and drop na
   data <- reactive({
     req(input$file)
@@ -133,10 +126,51 @@ server <- function(input, output, session) {
     return(df)
   })
 
-  # Dynamically update column choices for X and Y ----
-  observeEvent(data(), {
+
+  observe({
+    if (!is.null(data())) {
+      shinyjs::removeClass(id="inputs-container", class="disabled-input")  # Enable inputs
+    } else {
+      shinyjs::addClass("inputs-container", "disabled-input")  # Disable inputs
+    }
+  })
+
+  # Update choices for X and Y columns when data is uploaded
+  observe({
+    req(data())
     updateSelectInput(session, "x_col", choices = names(data()))
     updateSelectInput(session, "y_col", choices = names(data()))
+  })
+
+  # Update slider for window size (m) when data is uploaded
+  observe({
+    req(data())
+    max_m <- nrow(data())
+    updateSliderInput(session, "m", max = max_m, value = floor(max_m * 0.25))
+  })
+
+  # Update slider for bandwidth when X column is selected
+  observe({
+    req(data(), input$x_col)  # Ensure data and x_col are available
+    X <- data()[[input$x_col]]
+    x_range <- range(X, na.rm = TRUE)
+    default <- bw.nrd(X) * (length(X) ^ -0.1)
+    updateSliderInput(session, "bandwidth", min = 0.005, max = default * 20, value = default)
+  })
+
+  # modal for when info button is pressed
+  observeEvent(input$info_btn, {
+    showModal(modalDialog(
+      title = "Data Cleaning Information",
+      HTML("<ul>
+             <li>All NA values are automatically removed.</li>
+             <li>If your data contains more than 2000 rows, a random 2000 with be selected.</li>
+             <li>At least 2 columns are required.</li>
+             <li>All non-numeric columns will be dropped.</li>
+           </ul>"),
+      easyClose = TRUE,
+      footer = modalButton("Close")
+    ))
   })
 
   # show head of data nicely
